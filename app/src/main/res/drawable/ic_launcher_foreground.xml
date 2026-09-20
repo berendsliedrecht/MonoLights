@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Outlined light bulb glyph: thin black strokes on white, e-ink friendly. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <group
+        android:scaleX="0.75"
+        android:scaleY="0.75"
+        android:pivotX="54"
+        android:pivotY="54"
+        android:translateY="2.6">
+
+        <!-- bulb globe -->
+        <path
+            android:strokeColor="#000000"
+            android:strokeWidth="3.5"
+            android:strokeLineJoin="round"
+            android:strokeLineCap="round"
+            android:fillColor="#00000000"
+            android:pathData="M54,26 A16,16 0 0 1 70,42 C70,48 67,52 64,55 C61.5,57.5 60,60 60,63 H48 C48,60 46.5,57.5 44,55 C41,52 38,48 38,42 A16,16 0 0 1 54,26 Z" />
+
+        <!-- filament base -->
+        <path
+            android:strokeColor="#000000"
+            android:strokeWidth="3"
+            android:strokeLineCap="round"
+            android:fillColor="#00000000"
+            android:pathData="M48,69 H60 M49,75 H59" />
+    </group>
+</vector>
