@@ -41,6 +41,7 @@ import com.mudita.mmd.components.top_app_bar.TopAppBarMMD
 @Composable
 fun HomeScreen(viewModel: LightsViewModel) {
     var menuOpen by remember { mutableStateOf(false) }
+    var adjusting by remember { mutableStateOf<Adjusting?>(null) }
     val snackbarHostState = remember { SnackbarHostStateMMD() }
 
     LaunchedEffect(Unit) { viewModel.refresh() }
@@ -48,6 +49,11 @@ fun HomeScreen(viewModel: LightsViewModel) {
         viewModel.messages.collect {
             snackbarHostState.showSnackbar(message = it, duration = SnackbarDurationMMD.Short)
         }
+    }
+
+    adjusting?.let { target ->
+        AdjustScreen(viewModel, target, snackbarHostState, onBack = { adjusting = null })
+        return
     }
 
     Scaffold(
@@ -88,7 +94,7 @@ fun HomeScreen(viewModel: LightsViewModel) {
                     OutlinedButtonMMD(onClick = { viewModel.refresh() }) { TextMMD("Retry") }
                 }
             }
-            else -> LightsTab(viewModel, modifier)
+            else -> LightsTab(viewModel, modifier, onAdjust = { adjusting = it })
         }
     }
 }

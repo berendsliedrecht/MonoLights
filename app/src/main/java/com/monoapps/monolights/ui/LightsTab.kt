@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalFoundationApi::class)
 
 package com.monoapps.monolights.ui
 
@@ -16,26 +16,18 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.monoapps.monolights.LightsViewModel
 import com.monoapps.monolights.api.HueLight
-import com.mudita.mmd.components.bottom_sheet.ModalBottomSheetMMD
-import com.mudita.mmd.components.bottom_sheet.rememberModalBottomSheetMMDState
-import com.mudita.mmd.components.buttons.ButtonMMD
 import com.mudita.mmd.components.buttons.OutlinedButtonMMD
 import com.mudita.mmd.components.lazy.LazyColumnMMD
 import com.mudita.mmd.components.text.TextMMD
@@ -44,15 +36,12 @@ import kotlin.math.roundToInt
 private fun percent(bri: Int) = (bri / 254f * 100).roundToInt()
 
 @Composable
-fun LightsTab(viewModel: LightsViewModel, modifier: Modifier) {
+fun LightsTab(viewModel: LightsViewModel, modifier: Modifier, onAdjust: (Adjusting) -> Unit) {
     val lights = viewModel.lights
     if (lights.isEmpty()) {
         Centered(modifier) { TextMMD("No lights found on the bridge.", fontSize = 16.sp) }
         return
     }
-
-    // Light whose brightness sheet is open.
-    var adjusting by remember { mutableStateOf<String?>(null) }
 
     val roomedIds = viewModel.rooms.flatMap { it.second.lights }.toSet()
     val other = lights.filterKeys { it !in roomedIds }.toList()
@@ -62,32 +51,17 @@ fun LightsTab(viewModel: LightsViewModel, modifier: Modifier) {
             val roomLights = room.lights.mapNotNull { id -> lights[id]?.let { id to it } }
             if (roomLights.isEmpty()) return@forEach
             item(key = "room-$roomId") {
-                RoomHeader(
-                    name = room.name,
-                    anyOn = room.state.anyOn,
-                    onToggle = { viewModel.toggleRoom(roomId) },
-                )
+                RoomHeader(name = room.name, onEdit = { onAdjust(Adjusting.Room(roomId)) })
             }
-            tileGrid(roomLights, viewModel, onAdjust = { adjusting = it })
+            tileGrid(roomLights, viewModel, onAdjust = { onAdjust(Adjusting.Light(it)) })
         }
         if (other.isNotEmpty()) {
             item(key = "room-other") {
-                RoomHeader(name = "Other", anyOn = false, onToggle = null)
+                RoomHeader(name = "Other", onEdit = null)
             }
-            tileGrid(other, viewModel, onAdjust = { adjusting = it })
+            tileGrid(other, viewModel, onAdjust = { onAdjust(Adjusting.Light(it)) })
         }
         item(key = "bottom-space") { Spacer(Modifier.height(16.dp)) }
-    }
-
-    adjusting?.let { id ->
-        lights[id]?.let { light ->
-            BrightnessSheet(
-                name = light.name,
-                percent = if (light.state.on) percent(light.state.bri) else 0,
-                onDismiss = { adjusting = null },
-                onSet = { viewModel.setBrightness(id, (it / 100f * 254).roundToInt()) },
-            )
-        }
     }
 }
 
@@ -117,8 +91,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.tileGrid(
     }
 }
 
+/** Edit opens the room-wide adjust screen (brightness, color, all on/off). */
 @Composable
-private fun RoomHeader(name: String, anyOn: Boolean, onToggle: (() -> Unit)?) {
+private fun RoomHeader(name: String, onEdit: (() -> Unit)?) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -131,15 +106,15 @@ private fun RoomHeader(name: String, anyOn: Boolean, onToggle: (() -> Unit)?) {
             fontWeight = FontWeight.Bold,
             modifier = Modifier.weight(1f),
         )
-        if (onToggle != null) {
-            OutlinedButtonMMD(onClick = onToggle) {
-                TextMMD(if (anyOn) "All off" else "All on", fontSize = 14.sp)
+        if (onEdit != null) {
+            OutlinedButtonMMD(onClick = onEdit) {
+                TextMMD("Edit", fontSize = 14.sp)
             }
         }
     }
 }
 
-/** On = inverted (black tile, white text). Tap toggles, long-press adjusts brightness. */
+/** On = inverted (black tile, white text). Tap toggles, long-press adjusts. */
 @Composable
 private fun LightTile(
     light: HueLight,
@@ -185,69 +160,14 @@ private fun LightTile(
         TextMMD(
             when {
                 !reachable -> "Offline"
-                on -> "${percent(light.state.bri)}%"
+                on -> listOfNotNull("${percent(light.state.bri)}%", colorLabel(light.state))
+                    .joinToString(" · ")
                 else -> "Off"
             },
             fontSize = 14.sp,
             color = foreground,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
-    }
-}
-
-@Composable
-private fun BrightnessSheet(
-    name: String,
-    percent: Int,
-    onDismiss: () -> Unit,
-    onSet: (Int) -> Unit,
-) {
-    ModalBottomSheetMMD(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetMMDState(skipPartiallyExpanded = true),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
-        ) {
-            TextMMD(name, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(16.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                OutlinedButtonMMD(onClick = { onSet((percent - 10).coerceAtLeast(10)) }) {
-                    TextMMD("−", fontSize = 20.sp)
-                }
-                TextMMD(
-                    "$percent%",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f),
-                )
-                OutlinedButtonMMD(onClick = { onSet((percent + 10).coerceAtMost(100)) }) {
-                    TextMMD("+", fontSize = 20.sp)
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                listOf(25, 50, 75, 100).forEach { preset ->
-                    OutlinedButtonMMD(
-                        onClick = { onSet(preset) },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        TextMMD("$preset%", fontSize = 14.sp)
-                    }
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-            ButtonMMD(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-                TextMMD("Done")
-            }
-        }
     }
 }

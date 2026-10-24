@@ -21,7 +21,9 @@ or build from source:
 
 The first time you open the app it searches your Wi-Fi network for a Hue Bridge. Pick your bridge (or type its IP address), then press the round button on the bridge itself to confirm the pairing. The bridge remembers the app from then on.
 
-After that every room shows its lights as big tiles, two per row. Tap a tile to switch that light on or off; a light that is on shows as a solid black tile with its brightness. Hold a tile to change the brightness with plus and minus buttons or a preset. Each room also has a button to switch everything in it on or off at once.
+After that every room shows its lights as big tiles, two per row. Tap a tile to switch that light on or off; a light that is on shows as a solid black tile with its brightness. Hold a tile to open a page where you change its brightness with plus and minus buttons or a preset, and switch it on or off from the top bar.
+
+Lights that can do color get a color picker on the same page. Because the screen is black and white, colors are picked by name: Red, Orange, Yellow and so on, plus white tones from Candle to Daylight. The tile shows the chosen name next to the brightness so you always know what a light is set to. The Edit button next to a room's name opens the same page for the whole room, including switching everything on or off at once.
 
 Use the menu in the top right to forget the bridge and pair again.
 
@@ -37,7 +39,9 @@ The app needs network access for exactly one thing: talking to the Hue Bridge ov
 - `app/src/main/java/com/monoapps/monolights/api/HueDiscovery.kt`: finds bridges on the network via mDNS.
 - `app/src/main/java/com/monoapps/monolights/ui/SetupScreen.kt`: bridge discovery and link-button pairing.
 - `app/src/main/java/com/monoapps/monolights/ui/HomeScreen.kt`: app frame around the lights grid.
-- `app/src/main/java/com/monoapps/monolights/ui/LightsTab.kt`: light tiles per room and the brightness sheet.
+- `app/src/main/java/com/monoapps/monolights/ui/LightsTab.kt`: light tiles per room.
+- `app/src/main/java/com/monoapps/monolights/ui/AdjustScreen.kt`: full-page editor for a light or room (on/off, brightness, color, white tone).
+- `app/src/main/java/com/monoapps/monolights/ui/HueColors.kt`: the named colors and white tones and how a light's state maps to a name.
 
 ## Support
 

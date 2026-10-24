@@ -14,6 +14,11 @@ import java.util.concurrent.TimeUnit
 data class LightState(
     val on: Boolean = false,
     val bri: Int = 0,
+    // Null on lights that don't support color (hue/sat) or white temperature (ct).
+    val hue: Int? = null,
+    val sat: Int? = null,
+    val ct: Int? = null,
+    val colormode: String? = null,
     val reachable: Boolean = true,
 )
 
@@ -32,6 +37,8 @@ data class HueGroup(
     val type: String = "",
     val lights: List<String> = emptyList(),
     val state: GroupState = GroupState(),
+    // Last state the bridge applied to the group; used as the room's current values.
+    val action: LightState = LightState(),
 )
 
 /**
@@ -65,16 +72,31 @@ class HueApi(private val ip: String, private val username: String = "") {
     fun groups(): Map<String, HueGroup> =
         gson.fromJson(get("/groups"), object : TypeToken<Map<String, HueGroup>>() {}.type)
 
-    fun setLight(id: String, on: Boolean? = null, bri: Int? = null) =
-        put("/lights/$id/state", stateBody(on, bri))
+    fun setLight(
+        id: String,
+        on: Boolean? = null,
+        bri: Int? = null,
+        hue: Int? = null,
+        sat: Int? = null,
+        ct: Int? = null,
+    ) = put("/lights/$id/state", stateBody(on, bri, hue, sat, ct))
 
-    fun setGroup(id: String, on: Boolean? = null, bri: Int? = null) =
-        put("/groups/$id/action", stateBody(on, bri))
+    fun setGroup(
+        id: String,
+        on: Boolean? = null,
+        bri: Int? = null,
+        hue: Int? = null,
+        sat: Int? = null,
+        ct: Int? = null,
+    ) = put("/groups/$id/action", stateBody(on, bri, hue, sat, ct))
 
-    private fun stateBody(on: Boolean?, bri: Int?): String {
+    private fun stateBody(on: Boolean?, bri: Int?, hue: Int?, sat: Int?, ct: Int?): String {
         val state = mutableMapOf<String, Any>()
         on?.let { state["on"] = it }
         bri?.let { state["bri"] = it }
+        hue?.let { state["hue"] = it }
+        sat?.let { state["sat"] = it }
+        ct?.let { state["ct"] = it }
         return gson.toJson(state)
     }
 
@@ -90,12 +112,18 @@ class HueApi(private val ip: String, private val username: String = "") {
     }
 
     private fun put(path: String, body: String) {
-        execute(
+        val text = execute(
             Request.Builder()
                 .url("http://$ip/api/$username$path")
                 .put(body.toRequestBody(JSON))
                 .build()
         )
+        // The bridge reports failures per field inside a 200 response.
+        JsonParser.parseString(text).asJsonArray.forEach { element ->
+            element.asJsonObject.getAsJsonObject("error")?.let {
+                throw IOException(it.get("description").asString)
+            }
+        }
     }
 
     private fun execute(request: Request): String =

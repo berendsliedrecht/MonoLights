@@ -46,7 +46,7 @@ class LightsViewModel(app: Application) : AndroidViewModel(app) {
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val messages: SharedFlow<String> = _messages
 
-    private val brightnessJobs = mutableMapOf<String, Job>()
+    private val commandJobs = mutableMapOf<String, Job>()
 
     private fun api(): HueApi? {
         val ip = bridgeIp ?: return null
@@ -149,19 +149,117 @@ class LightsViewModel(app: Application) : AndroidViewModel(app) {
         runCommand { it.setGroup(id, on = on) }
     }
 
+    /**
+     * Sends a command after a short delay, replacing any pending command with the
+     * same key. The bridge silently drops commands that arrive in quick succession
+     * (groups especially), so rapid taps must collapse into one request. No refresh
+     * afterwards: the optimistic state is already correct and the bridge needs a
+     * moment before reads reflect the change.
+     */
+    private fun sendDebounced(key: String, command: (HueApi) -> Unit) {
+        commandJobs[key]?.cancel()
+        commandJobs[key] = viewModelScope.launch(Dispatchers.IO) {
+            delay(300)
+            try {
+                api()?.let(command)
+            } catch (e: IOException) {
+                _messages.tryEmit(e.message ?: "Bridge unreachable")
+            }
+        }
+    }
+
     /** Debounced so repeated taps don't flood the bridge. Turns the light on if it was off. */
     fun setBrightness(id: String, bri: Int) {
         val light = lights[id] ?: return
         val turnOn = !light.state.on
         lights = lights + (id to light.copy(state = light.state.copy(on = true, bri = bri)))
-        brightnessJobs[id]?.cancel()
-        brightnessJobs[id] = viewModelScope.launch(Dispatchers.IO) {
-            delay(300)
-            try {
-                api()?.setLight(id, on = if (turnOn) true else null, bri = bri.coerceIn(1, 254))
-            } catch (e: IOException) {
-                _messages.tryEmit("Bridge unreachable")
-            }
+        sendDebounced("bri-light-$id") {
+            it.setLight(id, on = if (turnOn) true else null, bri = bri.coerceIn(1, 254))
+        }
+    }
+
+    /** Sets a color light to a hue/sat value. Turns the light on if it was off. */
+    fun setColor(id: String, hue: Int, sat: Int) {
+        val light = lights[id] ?: return
+        val turnOn = !light.state.on
+        lights = lights + (id to light.copy(
+            state = light.state.copy(on = true, hue = hue, sat = sat, colormode = "hs")
+        ))
+        // Color and white share a key per target: they overwrite each other anyway.
+        sendDebounced("color-light-$id") {
+            it.setLight(id, on = if (turnOn) true else null, hue = hue, sat = sat)
+        }
+    }
+
+    /** Sets a light to a white color temperature (mireds). Turns it on if it was off. */
+    fun setWhite(id: String, ct: Int) {
+        val light = lights[id] ?: return
+        val turnOn = !light.state.on
+        lights = lights + (id to light.copy(
+            state = light.state.copy(on = true, ct = ct, colormode = "ct")
+        ))
+        sendDebounced("color-light-$id") {
+            it.setLight(id, on = if (turnOn) true else null, ct = ct)
+        }
+    }
+
+    /** Debounced like setBrightness. Turns the whole room on if it was off. */
+    fun setRoomBrightness(id: String, bri: Int) {
+        val room = rooms.toMap()[id] ?: return
+        val turnOn = !room.state.anyOn
+        lights = lights.mapValues { (lightId, light) ->
+            if (lightId in room.lights && (turnOn || light.state.on))
+                light.copy(state = light.state.copy(on = true, bri = bri))
+            else light
+        }
+        rooms = rooms.map { (roomId, group) ->
+            if (roomId == id) roomId to group.copy(
+                state = group.state.copy(anyOn = true, allOn = turnOn || group.state.allOn),
+                action = group.action.copy(on = true, bri = bri),
+            ) else roomId to group
+        }
+        sendDebounced("bri-group-$id") {
+            it.setGroup(id, on = if (turnOn) true else null, bri = bri.coerceIn(1, 254))
+        }
+    }
+
+    /** Sets every color-capable light in the room to a hue/sat value. */
+    fun setRoomColor(id: String, hue: Int, sat: Int) {
+        val room = rooms.toMap()[id] ?: return
+        val turnOn = !room.state.anyOn
+        lights = lights.mapValues { (lightId, light) ->
+            if (lightId in room.lights && light.state.hue != null && (turnOn || light.state.on))
+                light.copy(state = light.state.copy(on = true, hue = hue, sat = sat, colormode = "hs"))
+            else light
+        }
+        rooms = rooms.map { (roomId, group) ->
+            if (roomId == id) roomId to group.copy(
+                state = group.state.copy(anyOn = true, allOn = turnOn || group.state.allOn),
+                action = group.action.copy(on = true, hue = hue, sat = sat, colormode = "hs"),
+            ) else roomId to group
+        }
+        sendDebounced("color-group-$id") {
+            it.setGroup(id, on = if (turnOn) true else null, hue = hue, sat = sat)
+        }
+    }
+
+    /** Sets every tunable light in the room to a white color temperature (mireds). */
+    fun setRoomWhite(id: String, ct: Int) {
+        val room = rooms.toMap()[id] ?: return
+        val turnOn = !room.state.anyOn
+        lights = lights.mapValues { (lightId, light) ->
+            if (lightId in room.lights && light.state.ct != null && (turnOn || light.state.on))
+                light.copy(state = light.state.copy(on = true, ct = ct, colormode = "ct"))
+            else light
+        }
+        rooms = rooms.map { (roomId, group) ->
+            if (roomId == id) roomId to group.copy(
+                state = group.state.copy(anyOn = true, allOn = turnOn || group.state.allOn),
+                action = group.action.copy(on = true, ct = ct, colormode = "ct"),
+            ) else roomId to group
+        }
+        sendDebounced("color-group-$id") {
+            it.setGroup(id, on = if (turnOn) true else null, ct = ct)
         }
     }
 
@@ -172,7 +270,7 @@ class LightsViewModel(app: Application) : AndroidViewModel(app) {
                 command(api)
                 refresh()
             } catch (e: IOException) {
-                _messages.tryEmit("Bridge unreachable")
+                _messages.tryEmit(e.message ?: "Bridge unreachable")
             }
         }
     }
